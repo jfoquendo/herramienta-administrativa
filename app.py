@@ -8,29 +8,47 @@ from openpyxl.styles import PatternFill
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Multi-Tool Administrativa 2026",
-    page_icon="⚙️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_icon="🔐",
+    layout="wide"
 )
 
-# --- ESTILOS PERSONALIZADOS (CSS) ---
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #007bff;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- 1. BASE DE DATOS DE USUARIOS (Sencillo) ---
+# Puedes agregar tantos como necesites siguiendo el formato "usuario": "contraseña"
+USUARIOS_AUTORIZADOS = {
+    "admin": "admin2026",
+    "gerencia": "pago2026",
+    "operador1": "clave123",
+    "invitado": "654321"
+}
+
+def check_password():
+    """Retorna True si el usuario introdujo credenciales válidas."""
+    def login():
+        user = st.session_state["username"]
+        pw = st.session_state["password"]
+        if user in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[user] == pw:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.title("🔐 Acceso al Sistema")
+        st.text_input("Usuario", key="username")
+        st.text_input("Contraseña", type="password", key="password")
+        st.button("Entrar", on_click=login)
+        return False
+    elif not st.session_state["password_correct"]:
+        st.title("🔐 Acceso al Sistema")
+        st.text_input("Usuario", key="username")
+        st.text_input("Contraseña", type="password", key="password")
+        st.button("Entrar", on_click=login)
+        st.error("😕 Credenciales incorrectas")
+        return False
+    return True
 
 # --- FUNCIONES DE LÓGICA ---
-
 def limpiar_extremo(dato):
     if pd.isna(dato): return ""
     s = str(dato).strip()
@@ -43,149 +61,144 @@ def unlock_pdf(file_bytes, passwords):
         try:
             with pikepdf.open(io.BytesIO(file_bytes)) as pdf:
                 out = io.BytesIO(); pdf.save(out)
-                return True, "Sin protección o ya liberado.", out.getvalue()
+                return True, "Liberado.", out.getvalue()
         except pikepdf.PasswordError:
             pass 
         for pw in passwords:
             try:
                 with pikepdf.open(io.BytesIO(file_bytes), password=pw.strip()) as pdf:
                     out = io.BytesIO(); pdf.save(out)
-                    return True, "Desbloqueado con éxito.", out.getvalue()
-            except pikepdf.PasswordError:
-                continue
-        return False, "Contraseña incorrecta o no suministrada.", None
-    except Exception as e:
-        return False, f"Error técnico: {str(e)}", None
+                    return True, "Desbloqueado.", out.getvalue()
+            except pikepdf.PasswordError: continue
+        return False, "Contraseña incorrecta.", None
+    except Exception as e: return False, f"Error: {str(e)}", None
 
-# --- MENÚ LATERAL ---
-with st.sidebar:
-    st.title("🛠️ Panel de Control")
-    st.markdown("---")
-    opcion = st.radio(
-        "Seleccione una Herramienta:",
-        ["📱 Agrupar Teléfonos", "🔓 Desbloqueo PDF", "👥 Cruce Empleados", "📊 Organizador Excel"],
-        index=0
-    )
-    st.markdown("---")
-    st.info("**Estado:** Conectado ✅")
-    st.caption("v3.5 - Edición 2026")
-
-# --- CONTENIDO PRINCIPAL ---
-
-if opcion == "📱 Agrupar Teléfonos":
-    st.header("📱 Extractor de Teléfonos para WhatsApp")
-    archivo = st.file_uploader("Subir Excel Base", type=["xlsx", "xls"])
+# --- INICIO DE LA APLICACIÓN ---
+if check_password():
     
-    if archivo:
-        df_temp = pd.read_excel(archivo, nrows=5)
-        c1, c2 = st.columns(2)
-        with c1:
-            col_obs = st.selectbox("Columna de Observaciones:", df_temp.columns)
-        with c2:
-            col_tel = st.selectbox("Columna de Teléfonos:", df_temp.columns)
+    # Menú Lateral
+    with st.sidebar:
+        st.title("🛠️ Menú Principal")
+        opcion = st.radio("Herramientas:", ["📱 Teléfonos", "🔓 PDFs", "👥 Cruce", "📊 Organizador"])
+        st.markdown("---")
+        if st.button("Cerrar Sesión"):
+            st.session_state["password_correct"] = False
+            st.rerun()
 
-        if st.button("🚀 Procesar y Agrupar"):
+    # --- PESTAÑA 1: TELÉFONOS ---
+    if opcion == "📱 Teléfonos":
+        st.header("📱 Extractor WhatsApp")
+        archivo = st.file_uploader("Subir Excel", type=["xlsx", "xls"])
+        if archivo:
+            df_temp = pd.read_excel(archivo, nrows=5)
+            c1, c2 = st.columns(2)
+            with c1: col_obs = st.selectbox("Columna Observaciones:", df_temp.columns)
+            with c2: col_tel = st.selectbox("Columna Teléfonos:", df_temp.columns)
+
+            if st.button("Procesar"):
+                bar = st.progress(0)
+                df = pd.read_excel(archivo)
+                cats = {'Cédula':['cedula'],'Firma':['firma'],'Foto':['foto'],'Carta':['carta'],'Cesantias':['cesantias'],'EPS':['eps'],'ADRES':['adres'],'Bancario':['bancario','cuenta'],'Incompleto':['incompleto'],'Acta de Grado':['acta'],"Ruaf":['ruaf']}
+                res = {c: [] for c in cats}
+                for i, fila in df.iterrows():
+                    obs = str(fila.get(col_obs, '')).lower()
+                    tel = fila.get(col_tel)
+                    if pd.isna(obs) or obs in ['nan','ok',''] or pd.isna(tel): continue
+                    num = f"A,57{limpiar_extremo(tel)}"
+                    for c, pws in cats.items():
+                        if any(p in obs for p in pws): res[c].append(num)
+                    bar.progress((i+1)/len(df))
+                
+                max_l = max(len(v) for v in res.values()) if res.values() else 0
+                for c in res: res[c] += [None]*(max_l - len(res[c]))
+                df_res = pd.DataFrame(res)
+                
+                st.subheader("👀 Vista Previa")
+                st.dataframe(df_res, use_container_width=True)
+                
+                out = io.BytesIO()
+                df_res.to_excel(out, index=False)
+                st.download_button("📥 Descargar", out.getvalue(), "Telefonos.xlsx")
+
+    # --- PESTAÑA 2: PDFs ---
+    elif opcion == "🔓 PDFs":
+        st.header("🔓 Desbloqueo Masivo PDF")
+        pws = st.text_input("Contraseñas (separadas por coma)")
+        p_files = st.file_uploader("PDFs", type="pdf", accept_multiple_files=True)
+        if p_files and st.button("Ejecutar"):
+            list_p = [p.strip() for p in pws.split(',')] if pws else []
             bar = st.progress(0)
-            df = pd.read_excel(archivo)
-            cats = {'Cédula':['cedula'],'Firma':['firma'],'Foto':['foto'],'Carta':['carta'],'Cesantias':['cesantias'],'EPS':['eps'],'ADRES':['adres'],'Bancario':['bancario','cuenta'],'Incompleto':['incompleto'],'Acta de Grado':['acta'],"Ruaf":['ruaf']}
-            res = {c: [] for c in cats}
-            
-            for i, fila in df.iterrows():
-                obs = str(fila.get(col_obs, '')).lower()
-                tel = fila.get(col_tel)
-                if pd.isna(obs) or obs in ['nan','ok',''] or pd.isna(tel): continue
-                num = f"A,57{limpiar_extremo(tel)}"
-                for c, pws in cats.items():
-                    if any(p in obs for p in pws): res[c].append(num)
-                bar.progress((i+1)/len(df))
-            
-            max_l = max(len(v) for v in res.values()) if res.values() else 0
-            for c in res: res[c] += [None]*(max_l - len(res[c]))
-            
-            df_final = pd.DataFrame(res)
-            st.dataframe(df_final, use_container_width=True)
-            out = io.BytesIO()
-            df_final.to_excel(out, index=False)
-            st.download_button("📥 Descargar Reporte", out.getvalue(), "Telefonos.xlsx")
+            for i, pf in enumerate(p_files):
+                ok, msg, content = unlock_pdf(pf.read(), list_p)
+                if ok:
+                    st.success(f"✅ {pf.name}")
+                    st.download_button(f"Descargar {pf.name}", content, f"unlocked_{pf.name}", key=f"p_{i}")
+                else: st.error(f"❌ {pf.name}: {msg}")
+                bar.progress((i+1)/len(p_files))
 
-elif opcion == "🔓 Desbloqueo PDF":
-    st.header("🔓 Desbloqueador Masivo de PDFs")
-    pws_raw = st.text_input("Contraseñas (separadas por coma)")
-    p_files = st.file_uploader("Selecciona los archivos PDF", type="pdf", accept_multiple_files=True)
-    
-    if p_files and st.button("🔓 Iniciar Desbloqueo"):
-        lista_pws = [p.strip() for p in pws_raw.split(',')] if pws_raw else []
-        bar = st.progress(0)
-        for i, pf in enumerate(p_files):
-            ok, msg, content = unlock_pdf(pf.read(), lista_pws)
-            if ok:
-                st.success(f"✅ {pf.name}")
-                st.download_button(f"Descargar {pf.name}", content, f"unlocked_{pf.name}", key=f"pdf_{i}")
-            else:
-                st.error(f"❌ {pf.name}: {msg}")
-            bar.progress((i+1)/len(p_files))
-
-elif opcion == "👥 Cruce Empleados":
-    st.header("👥 Cruce Masivo de Empleados")
-    c1, c2 = st.columns(2)
-    with c1: m_f = st.file_uploader("1. Maestro (Activos)", type="xlsx")
-    with c2: b_f = st.file_uploader("2. Lista Búsqueda", type="xlsx")
-    
-    if m_f and b_f:
-        df_m_head = pd.read_excel(m_f, skiprows=1, nrows=0)
-        col_id_m = st.selectbox("Columna ID en Maestro:", df_m_head.columns)
+    # --- PESTAÑA 3: CRUCE ---
+    elif opcion == "👥 Cruce":
+        st.header("👥 Cruce de Empleados")
+        c1, c2 = st.columns(2)
+        with c1: m_f = st.file_uploader("Maestro (Activos)", type="xlsx")
+        with c2: b_f = st.file_uploader("Lista Búsqueda", type="xlsx")
         
-        if st.button("🔎 Ejecutar Cruce"):
-            df_a = pd.read_excel(m_f, skiprows=1)
-            cols_orig = df_a.columns.tolist()
-            df_b = pd.read_excel(b_f, header=None)
+        if m_f and b_f:
+            df_m_h = pd.read_excel(m_f, skiprows=1, nrows=0)
+            sel_id = st.selectbox("Columna ID Maestro:", df_m_h.columns)
             
-            df_a['ID_LIMPIO'] = df_a[col_id_m].apply(limpiar_extremo)
-            ceds_busqueda = set([limpiar_extremo(v) for v in df_b.values.flatten() if limpiar_extremo(v) != ""])
-            
-            encontrados = df_a[df_a['ID_LIMPIO'].isin(ceds_busqueda)].copy()
-            encontrados = encontrados[cols_orig]
-            faltantes = [c for c in ceds_busqueda if c not in set(encontrados['ID_LIMPIO'])]
-            
-            out_enc = io.BytesIO()
-            with pd.ExcelWriter(out_enc, engine='openpyxl') as writer:
-                encontrados.to_excel(writer, index=False)
-                ws = writer.book.active
-                fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-                dup_mask = encontrados[col_id_m].duplicated(keep=False).tolist()
-                for i, is_dup in enumerate(dup_mask):
-                    if is_dup:
-                        for cell in ws[i+2]: cell.fill = fill
-            
-            st.metric("Encontrados", len(encontrados))
-            st.download_button("📥 Descargar EXISTENTES", out_enc.getvalue(), "Existentes.xlsx")
-            if faltantes:
-                out_f = io.BytesIO()
-                pd.DataFrame(faltantes, columns=['ID_Faltante']).to_excel(out_f, index=False)
-                st.download_button("📥 Descargar FALTANTES", out_f.getvalue(), "Faltantes.xlsx")
+            if st.button("Ejecutar Cruce"):
+                bar = st.progress(0)
+                df_a = pd.read_excel(m_f, skiprows=1)
+                cols_o = df_a.columns.tolist()
+                df_b = pd.read_excel(b_f, header=None)
+                df_a['ID_L'] = df_a[sel_id].apply(limpiar_extremo)
+                ceds = set([limpiar_extremo(v) for v in df_b.values.flatten() if limpiar_extremo(v) != ""])
+                
+                enc = df_a[df_a['ID_L'].isin(ceds)].copy()
+                enc = enc[cols_o]
+                bar.progress(100)
+                
+                st.subheader("🔎 Vista Previa (Encontrados)")
+                st.dataframe(enc, use_container_width=True)
+                
+                out_e = io.BytesIO()
+                with pd.ExcelWriter(out_e, engine='openpyxl') as writer:
+                    enc.to_excel(writer, index=False)
+                    # Lógica de color original
+                    ws = writer.book.active
+                    fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+                    dup_mask = enc[sel_id].duplicated(keep=False).tolist()
+                    for i, is_dup in enumerate(dup_mask):
+                        if is_dup:
+                            for cell in ws[i+2]: cell.fill = fill
 
-elif opcion == "📊 Organizador Excel":
-    st.header("📊 Organizador de Excel")
-    c1, c2 = st.columns(2)
-    with c1: d_f = st.file_uploader("Excel Principal (Datos)", type="xlsx")
-    with c2: o_f = st.file_uploader("Excel de Referencia (Orden)", type="xlsx")
-        
-    if d_f and o_f:
-        df_d_head = pd.read_excel(d_f, nrows=0)
-        df_o_head = pd.read_excel(o_f, nrows=0)
-        sel_d = st.selectbox("Columna ID Datos:", df_d_head.columns)
-        sel_o = st.selectbox("Columna ID Orden:", df_o_head.columns)
+                st.download_button("📥 Descargar EXISTENTES", out_e.getvalue(), "Existentes.xlsx")
 
-        if st.button("⚙️ Reorganizar"):
-            df_datos = pd.read_excel(d_f)
-            cols_orig = df_datos.columns.tolist()
-            df_orden = pd.read_excel(o_f)
-            df_datos[sel_d] = df_datos[sel_d].astype(str).str.strip()
-            df_orden[sel_o] = df_orden[sel_o].astype(str).str.strip()
-            
-            df_res = pd.merge(df_orden[[sel_o]], df_datos, left_on=sel_o, right_on=sel_d, how='left')
-            df_res = df_res[cols_orig]
-            
-            out = io.BytesIO()
-            df_res.to_excel(out, index=False)
-            st.download_button("📥 Descargar Organizado", out.getvalue(), "Organizado.xlsx")
+    # --- PESTAÑA 4: ORGANIZADOR ---
+    elif opcion == "📊 Organizador":
+        st.header("📊 Organizador Excel")
+        c1, c2 = st.columns(2)
+        with c1: d_f = st.file_uploader("Datos", type="xlsx")
+        with c2: o_f = st.file_uploader("Orden", type="xlsx")
+        if d_f and o_f:
+            id_d = st.selectbox("ID Datos:", pd.read_excel(d_f, nrows=0).columns)
+            id_o = st.selectbox("ID Orden:", pd.read_excel(o_f, nrows=0).columns)
+            if st.button("Organizar"):
+                bar = st.progress(50)
+                df_d = pd.read_excel(d_f)
+                cols = df_d.columns.tolist()
+                df_o = pd.read_excel(o_f)
+                df_d[id_d] = df_d[id_d].astype(str).str.strip()
+                df_o[id_o] = df_o[id_o].astype(str).str.strip()
+                
+                df_res = pd.merge(df_o[[id_o]], df_d, left_on=id_o, right_on=id_d, how='left')
+                df_res = df_res[cols]
+                bar.progress(100)
+                
+                st.subheader("📊 Resultado Organizado")
+                st.dataframe(df_res, use_container_width=True)
+                
+                out = io.BytesIO()
+                df_res.to_excel(out, index=False)
+                st.download_button("📥 Descargar", out.getvalue(), "Organizado.xlsx")
