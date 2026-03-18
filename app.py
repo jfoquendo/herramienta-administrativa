@@ -137,44 +137,91 @@ if check_password():
                 bar.progress((i+1)/len(p_files))
 
     # --- PESTAÑA 3: CRUCE ---
+    # --- PESTAÑA 3: CRUCE ---
     elif opcion == "👥 Cruce":
         st.header("👥 Cruce de Empleados")
+        st.write("Cruce masivo con resaltado de duplicados y detección de faltantes.")
+        
         c1, c2 = st.columns(2)
-        with c1: m_f = st.file_uploader("Maestro (Activos)", type="xlsx")
-        with c2: b_f = st.file_uploader("Lista Búsqueda", type="xlsx")
+        with c1: m_f = st.file_uploader("1. Maestro (Activos)", type="xlsx", key="m_cruce")
+        with c2: b_f = st.file_uploader("2. Lista Búsqueda (IDs)", type="xlsx", key="b_cruce")
         
         if m_f and b_f:
+            # Lectura rápida de cabeceras para el selector
             df_m_h = pd.read_excel(m_f, skiprows=1, nrows=0)
-            sel_id = st.selectbox("Columna ID Maestro:", df_m_h.columns)
+            sel_id = st.selectbox("Selecciona columna ID en Maestro:", df_m_h.columns)
             
-            if st.button("Ejecutar Cruce"):
-                bar = st.progress(0)
-                df_a = pd.read_excel(m_f, skiprows=1)
-                cols_o = df_a.columns.tolist()
-                df_b = pd.read_excel(b_f, header=None)
-                df_a['ID_L'] = df_a[sel_id].apply(limpiar_extremo)
-                ceds = set([limpiar_extremo(v) for v in df_b.values.flatten() if limpiar_extremo(v) != ""])
-                
-                enc = df_a[df_a['ID_L'].isin(ceds)].copy()
-                enc = enc[cols_o]
-                bar.progress(100)
-                
-                st.subheader("🔎 Vista Previa (Encontrados)")
-                st.dataframe(enc, use_container_width=True)
-                
-                out_e = io.BytesIO()
-                with pd.ExcelWriter(out_e, engine='openpyxl') as writer:
-                    enc.to_excel(writer, index=False)
-                    # Lógica de color original
-                    ws = writer.book.active
-                    fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
-                    dup_mask = enc[sel_id].duplicated(keep=False).tolist()
-                    for i, is_dup in enumerate(dup_mask):
-                        if is_dup:
-                            for cell in ws[i+2]: cell.fill = fill
+            # El botón de ejecución
+            ejecutar = st.button("🚀 Iniciar Cruce de Datos")
 
-                st.download_button("📥 Descargar EXISTENTES", out_e.getvalue(), "Existentes.xlsx")
+            if ejecutar:
+                # Usamos st.status para mostrar el progreso de forma profesional
+                with st.status("Procesando cruce de información...", expanded=True) as status:
+                    
+                    st.write("📥 Cargando archivos Excel...")
+                    df_a = pd.read_excel(m_f, skiprows=1)
+                    cols_o = df_a.columns.tolist()
+                    df_b = pd.read_excel(b_f, header=None)
+                    
+                    st.write("🧹 Limpiando y normalizando IDs...")
+                    df_a['ID_L'] = df_a[sel_id].apply(limpiar_extremo)
+                    # Convertimos la lista de búsqueda en un set para velocidad (O(1))
+                    ceds = set([limpiar_extremo(v) for v in df_b.values.flatten() if limpiar_extremo(v) != ""])
+                    
+                    st.write("🔎 Buscando coincidencias...")
+                    enc = df_a[df_a['ID_L'].isin(ceds)].copy()
+                    enc = enc[cols_o] # Restauramos el orden de columnas original
+                    
+                    id_hallados = set(enc['ID_L'])
+                    faltantes = [c for c in ceds if c not in id_hallados]
+                    
+                    st.write("🎨 Aplicando formato y colores...")
+                    out_e = io.BytesIO()
+                    with pd.ExcelWriter(out_e, engine='openpyxl') as writer:
+                        enc.to_excel(writer, index=False)
+                        ws = writer.book.active
+                        fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+                        # Identificamos duplicados en la columna original
+                        dup_mask = enc[sel_id].duplicated(keep=False).tolist()
+                        for i, is_dup in enumerate(dup_mask):
+                            if is_dup:
+                                for cell in ws[i+2]: # i+2 por encabezado y base 1
+                                    cell.fill = fill
+                    
+                    status.update(label="✅ Cruce completado con éxito!", state="complete", expanded=False)
 
+                # --- RESULTADOS (Solo se muestran al terminar) ---
+                st.markdown("---")
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    st.metric("Cédulas Encontradas", len(enc))
+                with col_m2:
+                    st.metric("Cédulas Faltantes", len(faltantes))
+
+                st.subheader("👀 Vista Previa de Resultados (Primeros 100)")
+                st.dataframe(enc.head(100), use_container_width=True)
+                
+                # Botones de descarga
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    st.download_button(
+                        label="📥 Descargar EXISTENTES (Excel)",
+                        data=out_e.getvalue(),
+                        file_name="Cruce_Existentes_Color.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                with c_btn2:
+                    if faltantes:
+                        df_falt = pd.DataFrame(faltantes, columns=['ID_No_Encontrado'])
+                        out_f = io.BytesIO()
+                        df_falt.to_excel(out_f, index=False)
+                        st.download_button(
+                            label="📥 Descargar FALTANTES (Excel)",
+                            data=out_f.getvalue(),
+                            file_name="Cruce_Faltantes.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                st.balloons()
     # --- PESTAÑA 4: ORGANIZADOR ---
     elif opcion == "📊 Organizador":
         st.header("📊 Organizador Excel")
