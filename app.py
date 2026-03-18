@@ -11,7 +11,7 @@ st.set_page_config(page_title="Multi-Tool Administrativa 2026", page_icon="🔐"
 # --- 1. BASE DE DATOS DE USUARIOS ---
 USUARIOS_AUTORIZADOS = {
     "admin": "admin2026",
-    "gerencia": "pago2026",
+    "exssycortes": "Migajera2026**",
     "usuario1": "clave123"
 }
 
