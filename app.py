@@ -15,8 +15,8 @@ st.set_page_config(
 # --- 1. BASE DE DATOS DE USUARIOS (Sencillo) ---
 # Puedes agregar tantos como necesites siguiendo el formato "usuario": "contraseña"
 USUARIOS_AUTORIZADOS = {
-    "admin": "admin2026",
-    "gerencia": "pago2026",
+    "oquendo": "admin2026",
+    "exssycortes": "Migajera2026**",
     "operador1": "clave123",
     "invitado": "654321"
 }
