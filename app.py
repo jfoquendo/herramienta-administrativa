@@ -26,11 +26,8 @@ st.markdown("""
         background-color: #007bff;
         color: white;
     }
-    .stProgress .st-bo {
-        background-color: #007bff;
-    }
     </style>
-    """, unsafe_allow_密w=True)
+    """, unsafe_allow_html=True)
 
 # --- FUNCIONES DE LÓGICA ---
 
@@ -70,26 +67,22 @@ with st.sidebar:
         index=0
     )
     st.markdown("---")
-    st.info("**Estado del Sistema:** Conectado ✅")
+    st.info("**Estado:** Conectado ✅")
     st.caption("v3.5 - Edición 2026")
 
 # --- CONTENIDO PRINCIPAL ---
 
 if opcion == "📱 Agrupar Teléfonos":
     st.header("📱 Extractor de Teléfonos para WhatsApp")
-    st.write("Clasifica números según las observaciones del archivo Excel.")
-    
     archivo = st.file_uploader("Subir Excel Base", type=["xlsx", "xls"])
     
     if archivo:
         df_temp = pd.read_excel(archivo, nrows=5)
-        st.success("Archivo cargado correctamente.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            col_obs = st.selectbox("Columna de Observaciones:", df_temp.columns, index=0)
-        with col2:
-            col_tel = st.selectbox("Columna de Teléfonos:", df_temp.columns, index=1)
+        c1, c2 = st.columns(2)
+        with c1:
+            col_obs = st.selectbox("Columna de Observaciones:", df_temp.columns)
+        with c2:
+            col_tel = st.selectbox("Columna de Teléfonos:", df_temp.columns)
 
         if st.button("🚀 Procesar y Agrupar"):
             bar = st.progress(0)
@@ -111,53 +104,38 @@ if opcion == "📱 Agrupar Teléfonos":
             
             df_final = pd.DataFrame(res)
             st.dataframe(df_final, use_container_width=True)
-            
             out = io.BytesIO()
             df_final.to_excel(out, index=False)
-            st.download_button("📥 Descargar Reporte Agrupado", out.getvalue(), "Telefonos_WhatsApp.xlsx")
+            st.download_button("📥 Descargar Reporte", out.getvalue(), "Telefonos.xlsx")
 
 elif opcion == "🔓 Desbloqueo PDF":
     st.header("🔓 Desbloqueador Masivo de PDFs")
-    st.write("Sube tus archivos protegidos y aplica las contraseñas conocidas.")
-    
-    pws_raw = st.text_input("Contraseñas (separadas por coma)", placeholder="ej: 1234, clave2026, admin")
+    pws_raw = st.text_input("Contraseñas (separadas por coma)")
     p_files = st.file_uploader("Selecciona los archivos PDF", type="pdf", accept_multiple_files=True)
     
-    if p_files:
-        if st.button("🔓 Iniciar Desbloqueo"):
-            lista_pws = [p.strip() for p in pws_raw.split(',')] if pws_raw else []
-            bar = st.progress(0)
-            
-            for i, pf in enumerate(p_files):
-                ok, msg, content = unlock_pdf(pf.read(), lista_pws)
-                with st.expander(f"Archivo: {pf.name}"):
-                    if ok:
-                        st.success(msg)
-                        st.download_button(f"Descargar {pf.name}", content, f"liberado_{pf.name}", key=f"pdf_{i}")
-                    else:
-                        st.error(msg)
-                bar.progress((i+1)/len(p_files))
-            st.balloons()
+    if p_files and st.button("🔓 Iniciar Desbloqueo"):
+        lista_pws = [p.strip() for p in pws_raw.split(',')] if pws_raw else []
+        bar = st.progress(0)
+        for i, pf in enumerate(p_files):
+            ok, msg, content = unlock_pdf(pf.read(), lista_pws)
+            if ok:
+                st.success(f"✅ {pf.name}")
+                st.download_button(f"Descargar {pf.name}", content, f"unlocked_{pf.name}", key=f"pdf_{i}")
+            else:
+                st.error(f"❌ {pf.name}: {msg}")
+            bar.progress((i+1)/len(p_files))
 
 elif opcion == "👥 Cruce Empleados":
     st.header("👥 Cruce Masivo de Empleados")
-    st.write("Busca una lista de IDs dentro de un archivo Maestro conservando todo el formato.")
-    
     c1, c2 = st.columns(2)
-    with c1:
-        m_f = st.file_uploader("1. Subir Archivo Maestro", type="xlsx")
-    with c2:
-        b_f = st.file_uploader("2. Subir Lista de Búsqueda", type="xlsx")
+    with c1: m_f = st.file_uploader("1. Maestro (Activos)", type="xlsx")
+    with c2: b_f = st.file_uploader("2. Lista Búsqueda", type="xlsx")
     
     if m_f and b_f:
         df_m_head = pd.read_excel(m_f, skiprows=1, nrows=0)
-        col_id_m = st.selectbox("Selecciona columna ID del Maestro:", df_m_head.columns)
+        col_id_m = st.selectbox("Columna ID en Maestro:", df_m_head.columns)
         
-        if st.button("🔎 Ejecutar Cruce de Datos"):
-            bar = st.progress(0)
-            msg = st.empty()
-            
-            msg.info("Cargando y procesando datos...")
+        if st.button("🔎 Ejecutar Cruce"):
             df_a = pd.read_excel(m_f, skiprows=1)
             cols_orig = df_a.columns.tolist()
             df_b = pd.read_excel(b_f, header=None)
@@ -165,17 +143,10 @@ elif opcion == "👥 Cruce Empleados":
             df_a['ID_LIMPIO'] = df_a[col_id_m].apply(limpiar_extremo)
             ceds_busqueda = set([limpiar_extremo(v) for v in df_b.values.flatten() if limpiar_extremo(v) != ""])
             
-            # Realizar el cruce
             encontrados = df_a[df_a['ID_LIMPIO'].isin(ceds_busqueda)].copy()
-            encontrados = encontrados[cols_orig] # Mantener orden original
+            encontrados = encontrados[cols_orig]
+            faltantes = [c for c in ceds_busqueda if c not in set(encontrados['ID_LIMPIO'])]
             
-            id_hallados = set(encontrados['ID_LIMPIO'])
-            faltantes = [c for c in ceds_busqueda if c not in id_hallados]
-            
-            bar.progress(70)
-            msg.info("Generando archivos de salida...")
-            
-            # Excel con resaltado
             out_enc = io.BytesIO()
             with pd.ExcelWriter(out_enc, engine='openpyxl') as writer:
                 encontrados.to_excel(writer, index=False)
@@ -186,56 +157,35 @@ elif opcion == "👥 Cruce Empleados":
                     if is_dup:
                         for cell in ws[i+2]: cell.fill = fill
             
-            col_res1, col_res2 = st.columns(2)
-            with col_res1:
-                st.metric("Encontrados", len(encontrados))
-                st.download_button("📥 Descargar EXISTENTES", out_enc.getvalue(), "Cruce_Existentes.xlsx")
-            with col_res2:
-                st.metric("No Encontrados", len(faltantes))
-                if faltantes:
-                    out_f = io.BytesIO()
-                    pd.DataFrame(faltantes, columns=['ID_No_Encontrado']).to_excel(out_f, index=False)
-                    st.download_button("📥 Descargar FALTANTES", out_f.getvalue(), "Cruce_Faltantes.xlsx")
-            
-            bar.progress(100)
-            msg.success("Proceso de cruce terminado con éxito.")
+            st.metric("Encontrados", len(encontrados))
+            st.download_button("📥 Descargar EXISTENTES", out_enc.getvalue(), "Existentes.xlsx")
+            if faltantes:
+                out_f = io.BytesIO()
+                pd.DataFrame(faltantes, columns=['ID_Faltante']).to_excel(out_f, index=False)
+                st.download_button("📥 Descargar FALTANTES", out_f.getvalue(), "Faltantes.xlsx")
 
 elif opcion == "📊 Organizador Excel":
-    st.header("📊 Organizador por Lista Específica")
-    st.write("Reordena el archivo de datos basándose en el orden de otro archivo.")
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        d_f = st.file_uploader("Archivo Principal (Datos)", type="xlsx")
-    with col_b:
-        o_f = st.file_uploader("Archivo de Referencia (Orden)", type="xlsx")
+    st.header("📊 Organizador de Excel")
+    c1, c2 = st.columns(2)
+    with c1: d_f = st.file_uploader("Excel Principal (Datos)", type="xlsx")
+    with c2: o_f = st.file_uploader("Excel de Referencia (Orden)", type="xlsx")
         
     if d_f and o_f:
         df_d_head = pd.read_excel(d_f, nrows=0)
         df_o_head = pd.read_excel(o_f, nrows=0)
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            sel_d = st.selectbox("Columna ID en Datos:", df_d_head.columns)
-        with c2:
-            sel_o = st.selectbox("Columna ID en Orden:", df_temp_o_cols := df_o_head.columns)
+        sel_d = st.selectbox("Columna ID Datos:", df_d_head.columns)
+        sel_o = st.selectbox("Columna ID Orden:", df_o_head.columns)
 
-        if st.button("⚙️ Reorganizar Documento"):
-            bar = st.progress(20)
+        if st.button("⚙️ Reorganizar"):
             df_datos = pd.read_excel(d_f)
             cols_orig = df_datos.columns.tolist()
             df_orden = pd.read_excel(o_f)
-            
             df_datos[sel_d] = df_datos[sel_d].astype(str).str.strip()
             df_orden[sel_o] = df_orden[sel_o].astype(str).str.strip()
             
-            bar.progress(60)
-            # Cruce para ordenar
             df_res = pd.merge(df_orden[[sel_o]], df_datos, left_on=sel_o, right_on=sel_d, how='left')
             df_res = df_res[cols_orig]
             
             out = io.BytesIO()
             df_res.to_excel(out, index=False)
-            bar.progress(100)
-            st.success("¡Archivo reorganizado!")
-            st.download_button("📥 Descargar Excel Organizado", out.getvalue(), "Resultado_Ordenado.xlsx")
+            st.download_button("📥 Descargar Organizado", out.getvalue(), "Organizado.xlsx")
